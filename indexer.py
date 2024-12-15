@@ -229,10 +229,11 @@ def create_vectorstore(json_file_path: str, embedding_model_name: str, batch_siz
         # Step 4: Transfer FAISS index to GPU if CUDA is available
         if device == "cuda":
             import faiss
-            res = faiss.StandardGpuResources()
-            cpu_index = vectorstore.index
-            vectorstore.index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
-            logger.info("FAISS index transferred to GPU.")
+            if hasattr(faiss, "StandardGpuResources"):
+                res = faiss.StandardGpuResources()
+                cpu_index = vectorstore.index
+                vectorstore.index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
+                logger.info("FAISS index transferred to GPU.")
 
         # Step 5: Process and add remaining documents in batches
         remaining_documents = documents[batch_size:]
