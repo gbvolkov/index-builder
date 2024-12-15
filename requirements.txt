@@ -1,0 +1,12 @@
+accelerate>=0.26.0
+torch
+
+langchain_community
+langchainhub
+langchain-huggingface
+faiss-cpu
+nltk
+sentencepiece
+
+#ijson
+#json_repair
