@@ -194,7 +194,7 @@ def get_documents(
 def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
 
-def create_vectorstore(json_file_path: str, embedding_model_name: str, batch_size: int = 500, max_retries: int = 3, max_chunk_size: int = 4000, overlap: int = 0.5):
+def create_vectorstore(json_file_path: str, embedding_model_name: str, batch_size: int = 500, max_retries: int = 3, max_chunk_size: int = 4000, overlap: int = 0.5) -> Tuple[FAISS, List[Document]]:
     """
     Creates a FAISS vectorstore from a JSON file using the specified embedding model, supporting GPU acceleration if available.
 
@@ -257,7 +257,10 @@ def create_vectorstore(json_file_path: str, embedding_model_name: str, batch_siz
                         logger.error(f"Batch {batch_num} failed after {max_retries} attempts. Skipping this batch.")
 
         logger.info("All batches processed. Vector store is ready.")
-        return vectorstore
+        logger.info("All batches processed. Vector store is ready.")
+        full_documents = get_documents(json_file_path, max_chunk_size=-1, overlap=0.5)
+        logger.info("Full documents store processed. Vector store and doc strore are ready.")
+        return (vectorstore, full_documents)
 
     except Exception as general_e:
         logger.exception(f"An unexpected error occurred: {general_e}")
