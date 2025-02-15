@@ -219,7 +219,7 @@ def save_vectorstore(vectorstore: FAISS, docstore: List[Document], file_path: st
 
 if __name__ == '__main__':
     json_name = "data/kb.json"
-    embedding_model_name = '/models/multilingual-e5-large'
+    embedding_model_name = 'intfloat/multilingual-e5-large'
     vectorestore_path = 'data/vectorstore_e5'
     (vectorstore, docstore) = create_vectorstore(json_name, embedding_model_name, batch_size=500, max_chunk_size=400, overlap=0.75)
     save_vectorstore(vectorstore, docstore, vectorestore_path)
