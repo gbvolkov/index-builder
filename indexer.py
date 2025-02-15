@@ -18,36 +18,18 @@ import os
 from functools import lru_cache
 from typing import List, Dict, Tuple, Any
 
+from sentence_splitter import chunk_sentences
+
+
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def split_string_into_chunks(s, max_length):
-    # Use list comprehension to create chunks
-    return [s[i:i + max_length] for i in range(0, len(s), max_length)]
-
-def smart_chunk_text(text: str, max_size: int) -> List[str]:
-    chunks = []
-    current_chunk = ""
-    #for line in text.split('\n'):
-    for line in split_string_into_chunks(text, max_size):
-        if len(current_chunk) + len(line) + 1 > max_size and current_chunk:
-            chunks.append(current_chunk.strip())
-            current_chunk = line
-        else:
-            if current_chunk:
-                current_chunk += '\n'
-            current_chunk += line
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-    return chunks
-
 def cleanup_ref_content(content: str) -> str:
     pattern = r'##IMAGE##\s+\S+\.(?:jpg|jpeg|png|gif|bmp|svg)'
     cleaned_content = re.sub(pattern, '', content)
     return cleaned_content
-
 
 
 def length_factory(tokenizer: Any = None):
@@ -58,63 +40,21 @@ def length_factory(tokenizer: Any = None):
         return _len
     else:
         return len
+
+def process_json_for_indexing(json_file_path: Any, max_chunk_size: int = 2000, overlap=0.75, embedding_model_name: str = None) -> List[Dict]:
     
-def chunk_sentences(sentences, max_chunk_size, overlap_size=0, _len=len):
-    chunks = []
-    current_chunk = []
-    current_length = 0
-    idx = 0
-
-    #_len = length_factory(tokenizer)
-
-    while idx < len(sentences):
-        sentence = sentences[idx]
-        sentence_length = _len(sentence)
-        
-        if current_length + sentence_length <= max_chunk_size:
-            current_chunk.append(sentence)
-            current_length += sentence_length
-        else:
-            # Add the current chunk to the chunks list
-            if current_chunk:
-                chunks.append(" ".join(current_chunk))
-            
-            # Determine the number of sentences to overlap based on overlap_size
-            overlap_sentences = []
-            overlap_length = 0
-            overlap_idx = idx - 1
-            
-            while overlap_idx >= 0 and overlap_length + _len(sentences[overlap_idx]) <= overlap_size:
-                overlap_sentences.insert(0, sentences[overlap_idx])
-                overlap_length += _len(sentences[overlap_idx])
-                overlap_idx -= 1
-            
-            # Start a new chunk with overlapping sentences
-            current_chunk = overlap_sentences.copy()
-            current_length = overlap_length
-            
-            # Avoid infinite loop by not resetting idx beyond a reasonable point
-            #if not overlap_sentences:
-                # If no overlap is possible, skip the problematic sentence
-        idx += 1
-
-    # Add any remaining sentences
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
-
-    return chunks
-
-
-def process_json_for_indexing(json_file_path: str, max_chunk_size: int = 2000, overlap=0.75, embedding_model_name: str = None) -> List[Dict]:
-    try:
-        with open(json_file_path, 'r', encoding='utf-8-sig') as file:
-            data = json.load(file)
-    except json.JSONDecodeError as e:
-        logger.info(f"Error decoding JSON: {e}")
-        return []
-    except FileNotFoundError:
-        logger.info(f"File not found: {json_file_path}")
-        return []
+    if type(json_file_path) == str:
+        try:
+            with open(json_file_path, 'r', encoding='utf-8-sig') as file:
+                data = json.load(file)
+        except json.JSONDecodeError as e:
+            logger.info(f"Error decoding JSON: {e}")
+            return []
+        except FileNotFoundError:
+            logger.info(f"File not found: {json_file_path}")
+            return []
+    else:
+        data = json_file_path
 
     tokenizer = None
     if embedding_model_name:
@@ -134,13 +74,10 @@ def process_json_for_indexing(json_file_path: str, max_chunk_size: int = 2000, o
         core_length = _len(f'{core_content}\nAdditional Information (Part 9999/9999):\n')
         current_chunk_max_size = max_chunk_size - core_length
 
-        #links = item.get('links', '')
-        #additional_content = f"Links:\n{links}\n\nReferences:\n{references}"
         if max_chunk_size > 0:
             references = cleanup_ref_content(item.get('references', ''))
         else:
             references = item.get('references', '')
-        #additional_content = f"Links:\n \n\nReferences:\n{references}"
         additional_content = f"{references}"
 
         if max_chunk_size > 0 and _len(additional_content) >= current_chunk_max_size:
@@ -155,6 +92,7 @@ def process_json_for_indexing(json_file_path: str, max_chunk_size: int = 2000, o
                 'content': full_content,
                 'metadata': {
                     'problem_number': item.get('problem_number', ''),
+                    'url':  item.get('url', ''),
                     'chunk_number': i+1,
                     'total_chunks': len(additional_chunks),
                     'actual_chunk_size': _len(full_content)
@@ -164,7 +102,7 @@ def process_json_for_indexing(json_file_path: str, max_chunk_size: int = 2000, o
     return processed_documents
 
 def get_documents(
-        json_file_path: str,
+        json_file_path: Any,
         max_chunk_size: int = 4000,
         overlap: int = 0.5,
         embedding_model_name: str = None
@@ -258,7 +196,6 @@ def create_vectorstore(json_file_path: str, embedding_model_name: str, batch_siz
                         logger.error(f"Batch {batch_num} failed after {max_retries} attempts. Skipping this batch.")
 
         logger.info("All batches processed. Vector store is ready.")
-        logger.info("All batches processed. Vector store is ready.")
         full_documents = get_documents(json_file_path, max_chunk_size=-1, overlap=0.5)
         logger.info("Full documents store processed. Vector store and doc strore are ready.")
         return (vectorstore, full_documents)
@@ -278,29 +215,6 @@ def save_vectorstore(vectorstore: FAISS, docstore: List[Document], file_path: st
         logger.error(f"Unexpected error while storing vector store: {str(e)}")
         raise
     logger.info(f"Vectorstore saved to {file_path}")
-
-def load_vectorstore(file_path: str, embedding_model_name: str) -> FAISS:
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"No vectorstore found at {file_path}")
-    
-    #with open(file_path, "rb") as f:
-    #    vectorstore = pickle.load(f)
-    
-    # Reinitialize the embedding function
-    logger.info(f"Loading vectorstore  from {file_path}")
-    embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
-    #embeddings = JinaEmbeddings(jina_api_key=config.JINA_API_KEY, model_name="jina-embeddings-v3")
-    #embeddings = OpenAIEmbeddings(model="text-embedding-3-large", chunk_size=2500)
-
-    vectorstore = FAISS.load_local(file_path, embeddings, allow_dangerous_deserialization=True)
-    logger.info(f"Vectorstore loaded from {file_path}")
-
-    # Load docstore
-    with open(f'{file_path}/docstore.pkl', 'rb') as file:
-        documents = pickle.load(file)
-    logger.info(f"Documentstore loaded from {file_path}/docstore.pkl")
-
-    return (vectorstore, documents)
 
 
 if __name__ == '__main__':
