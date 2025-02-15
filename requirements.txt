@@ -8,5 +8,6 @@ faiss-cpu
 nltk
 sentencepiece
 
+dotenv
 #ijson
 #json_repair
