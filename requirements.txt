@@ -8,6 +8,6 @@ faiss-cpu
 nltk
 sentencepiece
 
-dotenv
+python-dotenv
 #ijson
 #json_repair
